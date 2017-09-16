@@ -8,12 +8,16 @@ from pprint import pprint
 import re
 from mpl_toolkits.mplot3d import axes3d
 import matplotlib.pyplot as plt
+from scipy.interpolate import interp1d
 
 
 WIDTH = 10
 HEIGHT= 4
+m = interp1d([-80,-20],[0,1])
+
+
 #setup serial
-serialReader = serial.Serial('/dev/tty.SLAB_USBtoUART', 9600, timeout=1)
+serialReader = serial.Serial('/dev/tty.SLAB_USBtoUART', 115200, timeout=1)
 serialString = ""
 
 #hide the toolbar :)
@@ -41,8 +45,7 @@ def dataToXYZarrays():
 
 #create a shared window for 4 diagrams
 
-f= plt.figure()
-f.suptitle("Pronto Vision")
+f= plt.figure("Pronto Vision")
 ax1 = plt.subplot(221)
 ax2 = f.add_subplot(223, projection='3d')
 ax3 = plt.subplot(122)
@@ -76,7 +79,7 @@ def readSerial():
      data_left = serialReader.inWaiting()  # Get the number of characters ready to be read
      serialString += serialReader.read(data_left)
      print('\n\na: '+ serialString)
-     serialString = re.sub(r'[^0-9\.\,]', '', serialString)
+     serialString = re.sub(r'[^0-9\.\,\-]', '', serialString)
      print('\nb: '+serialString)
      parseString()
 
@@ -92,12 +95,14 @@ def parseString():
             fl = -1
             try:
                 fl = float(t)
+                #interpolate to 0->1
+                fl = float(m(fl))
             except ValueError:
                 print('parsing error caught\n')
             finally:
                 tokensFloats.append(fl)
         for token in tokensFloats:
-            if fl >= 0:
+            if fl >= 0 and fl <= 1:
                 data[dataColIndex][dataRowIndex] = token
             dataColIndex += 1
             if dataColIndex >=HEIGHT:

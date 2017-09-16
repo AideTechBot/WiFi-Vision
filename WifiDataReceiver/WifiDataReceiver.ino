@@ -6,7 +6,7 @@ void setup() {
 
 void loop() {
   // put your main code here, to run repeatedly:
-  float y = random(1, 101) / 100.0;
+  float y = random(-80, -20);
   Serial.print(y);
   Serial.print(",");
   delay(10);
