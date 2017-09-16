@@ -1,0 +1,1 @@
+cmd_/home/manuel/Desktop/projects/HTN/drivers/cp210x.ko := ld -r -m elf_x86_64 -T ./scripts/module-common.lds --build-id  -o /home/manuel/Desktop/projects/HTN/drivers/cp210x.ko /home/manuel/Desktop/projects/HTN/drivers/cp210x.o /home/manuel/Desktop/projects/HTN/drivers/cp210x.mod.o
