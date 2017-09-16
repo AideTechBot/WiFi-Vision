@@ -29,8 +29,8 @@ data = np.zeros((HEIGHT,WIDTH))
 data[0][0] = float(1)
 
 
-dataRowIndex = 0
-dataColIndex = 0
+#keeps track of which coloumn to write to for each antenna
+dataColIndexes = [0,0,0,0]
 
 def dataToXYZarrays():
     X = []
@@ -70,17 +70,15 @@ def updateFrame(*args):
     sem2 = ax2.plot_trisurf(X, Y, Z, cmap="hot",shade="true")
     sem3.set_array(data)
 
-
-#returns True successfull
 def readSerial():
      global serialString
      global data
      serialString += serialReader.read()  # Wait forever for anything
      data_left = serialReader.inWaiting()  # Get the number of characters ready to be read
      serialString += serialReader.read(data_left)
-     print('\n\na: '+ serialString)
-     serialString = re.sub(r'[^0-9\.\,\-]', '', serialString)
-     print('\nb: '+serialString)
+     #print('\n\na: '+ serialString)
+     serialString = re.sub(r'[^0-9\.\,\-\:]', '', serialString)
+     #print('\nb: '+serialString)
      parseString()
 
 def parseString():
@@ -90,26 +88,28 @@ def parseString():
     global data
     tokens = serialString.split(",")
     if len(tokens) > 1:
+        antennaIndexes = []
         tokensFloats = []
         for t in tokens[:len(tokens)-1]:
             fl = -1
             try:
-                fl = float(t)
+                antennaIndex = int(t[0])
+                fl = float(t[2:])
                 #interpolate to 0->1
                 fl = float(m(fl))
             except ValueError:
                 print('parsing error caught\n')
             finally:
+                antennaIndexes.append(antennaIndex)
                 tokensFloats.append(fl)
-        for token in tokensFloats:
+        for a in range(0,len(tokensFloats)):
+            token = tokensFloats[a]
+            antennaIndex = antennaIndexes[a]
             if fl >= 0 and fl <= 1:
-                data[dataColIndex][dataRowIndex] = token
-            dataColIndex += 1
-            if dataColIndex >=HEIGHT:
-                dataColIndex= 0
-                dataRowIndex += 1
-                if dataRowIndex >= WIDTH:
-                    dataRowIndex = 0
+                data[antennaIndex][dataColIndexes[antennaIndex]] = token
+            dataColIndexes[antennaIndex] += 1
+            if dataColIndexes[antennaIndex] >= WIDTH:
+                dataColIndexes[antennaIndex] = 0
             serialString = serialString[serialString.find(",")+1:]
 
 
