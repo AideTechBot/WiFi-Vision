@@ -6,15 +6,17 @@ import matplotlib.animation as animation
 import serial
 from pprint import pprint
 import re
+from mpl_toolkits.mplot3d import axes3d
+import matplotlib.pyplot as plt
 
 
-WIDTH = 500
+WIDTH = 10
 HEIGHT= 4
 #setup serial
 serialReader = serial.Serial('/dev/tty.SLAB_USBtoUART', 9600, timeout=1)
 serialString = ""
 
-#hide the toolbar
+#hide the toolbar :)
 mlp.rcParams['toolbar'] = 'None'
 
 
@@ -26,28 +28,45 @@ data[0][0] = float(1)
 dataRowIndex = 0
 dataColIndex = 0
 
-#create a seperate window for the projector
-fig = plt.figure()
-sep = plt.imshow(data, aspect='auto', interpolation='bicubic',
-                 cmap='copper', extent=[0, WIDTH, 0, HEIGHT])
+def dataToXYZarrays():
+    X = []
+    Y = []
+    Z = []
+    for i in range(0,HEIGHT):
+        for t in range(0, WIDTH):
+            X.append(t)
+            Y.append(i)
+            Z.append(data[i][t])
+    return X,Y,Z
 
 #create a shared window for 4 diagrams
-'''
-f, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, sharex='col', sharey='row')
-ax1.imshow(data, interpolation='bicubic', aspect='auto', cmap='bone')
-ax2.imshow(data, interpolation='bilinear', aspect='auto')
-ax3.imshow(data, interpolation='kaiser', aspect='auto')
-ax4.imshow(data, interpolation='sinc', aspect='auto')
-'''
 
+f= plt.figure()
+f.suptitle("Pronto Vision")
+ax1 = plt.subplot(221)
+ax2 = f.add_subplot(223, projection='3d')
+ax3 = plt.subplot(122)
+
+scaleSq = str(int(WIDTH/HEIGHT))
+scaleReq = str(int(WIDTH/(HEIGHT*2)))
+sem1 = ax1.imshow(data, interpolation='nearest', aspect=scaleReq,
+                  cmap='bone')
+X,Y,Z = dataToXYZarrays()
+sem2 = ax2.plot_trisurf(X,Y,Z, cmap="hot",  shade="true")
+sem3 = ax3.imshow(data, aspect=scaleSq,
+                                   interpolation='bicubic',
+                 cmap='copper', extent=[0, WIDTH, 0, HEIGHT])
 
 def updateFrame(*args):
     global data
-    global sep
+    global sem3
     #pprint(data)
     readSerial()
-    sep.set_array(data)
-    return sep
+    sem1.set_array(data)
+    X, Y, Z = dataToXYZarrays()
+    sem2 = ax2.plot_trisurf(X, Y, Z, cmap="hot",shade="true")
+    sem3.set_array(data)
+
 
 #returns True successfull
 def readSerial():
@@ -68,9 +87,18 @@ def parseString():
     global data
     tokens = serialString.split(",")
     if len(tokens) > 1:
-        tokensFloats = [float(t) for t in tokens[:len(tokens)-1]]
+        tokensFloats = []
+        for t in tokens[:len(tokens)-1]:
+            fl = -1
+            try:
+                fl = float(t)
+            except ValueError:
+                print('parsing error caught\n')
+            finally:
+                tokensFloats.append(fl)
         for token in tokensFloats:
-            data[dataColIndex][dataRowIndex] = token
+            if fl >= 0:
+                data[dataColIndex][dataRowIndex] = token
             dataColIndex += 1
             if dataColIndex >=HEIGHT:
                 dataColIndex= 0
@@ -80,7 +108,7 @@ def parseString():
             serialString = serialString[serialString.find(",")+1:]
 
 
-ani = animation.FuncAnimation(fig, updateFrame, interval=200)
+ani = animation.FuncAnimation(f, updateFrame, interval=200)
 
 
 x = np.array([0, WIDTH * 0.25, WIDTH*0.5, WIDTH*0.75, WIDTH])
@@ -89,6 +117,9 @@ plt.xticks(x, my_axis_labels)
 y = np.array([0,1,2,3,4])
 plt.yticks(y, my_axis_labels)
 plt.title('Heat Map behind 4ft x 4ft Wall')
+
+
+
 plt.show()
 
 
