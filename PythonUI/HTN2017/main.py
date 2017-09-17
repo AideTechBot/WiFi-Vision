@@ -20,20 +20,25 @@ class Callback(object):
         global serialRW
         serialRW.write("G".encode())
 
-    def onBasePressed(self, event):
+    def useAsBaseline(self, event):
         print 'base pressed'
+        global baseline
+        global data
+        baseline = data[:] #clones
+        cmpDataToBaseline()
 
+    
 
 
 #constants
 WIDTH = 100 #(num increments on track)
 HEIGHT= 6 #(num antennas)
-REDRAW_INTERVAL = 100
+REDRAW_INTERVAL = 20
 OUTER_INPUT_RANGE = [10.0,80.0]
 INPUT_RANGE = [30.0,60.0]
 DEPTH_IN_Z = True #If false, depth in Y
-ONLY_DRAW_3D_ON_COMPLETE = True
-ONLY_DRAW_PROJECTION_ON_COMPLETE = False
+#ONLY_DRAW_3D_ON_COMPLETE = True
+#ONLY_DRAW_PROJECTION_ON_COMPLETE = False
 
 #global vars
 m = interp1d(INPUT_RANGE,[0,1])
@@ -51,6 +56,9 @@ serialRW.open()
 serialRW.flush()
 serialRW.write("1".encode())
 
+
+baseline = None
+
 data = np.zeros((HEIGHT,WIDTH))
 #I think it uses the initial range in data points as a the permanent range
 #needs the '1' to get the full scale
@@ -60,14 +68,8 @@ data[0][0] = float(1)
 #Keeps track of which coloumn to write to for each antenna
 dataColIndexes = [0]*HEIGHT
 
-#0 -> baseline1
-#   visible: goes to right, getting blurry data and drawing it as such
-#   invisible: store in data
-#1 -> baseline2
-#   visible: goes to left, data appears hardly blurry
-#   invisible: filter and avg into data
-#2 -> detect1
-#3 -> detect2
+#0
+#1
 mode = 0
 
 
@@ -90,6 +92,13 @@ def dataToXYZarrays():
         return X, Z, Y
 
 
+def cmpDataToBaseline():
+    for i in range(0,HEIGHT):
+        for t in range(0, WIDTH):
+            temp = (data[i][t] - baseline[i][t]) * 3
+            data[t][i] = sorted([temp,0,1])[1]
+
+
 # create a shared window (figure) using subplots
 f = plt.figure("Pronto Vision")
 ax1 = plt.subplot(221)
@@ -105,8 +114,8 @@ axprev = plt.axes([0.7, 0.05, 0.1, 0.075])
 axnext = plt.axes([0.81, 0.05, 0.1, 0.075])
 bnext = Button(axnext, 'Start Reading')
 bnext.on_clicked(callback.onStartPressed)
-bprev = Button(axprev, 'Previous')
-#bprev.on_clicked(callback.prev)
+bprev = Button(axprev, 'Use as baseline')
+bprev.on_clicked(callback.useAsBaseline)
 
 
 #create projection window
@@ -143,23 +152,16 @@ sem4 = ax4.imshow(data, interpolation='bilinear', aspect='auto',
 
 
 def updateFrame(*args):
-    global data
-    global sem1
-    global sem3
-    global sem4
     #pprint(data)
     readSerial()
+    global sem1
+    global sem3
     sem1.set_array(data)
-    if not ONLY_DRAW_3D_ON_COMPLETE:
-        X, Y, Z = dataToXYZarrays()
-        ax2.plot_trisurf(X, Y, Z, cmap="hot",shade="true")
     sem3.set_array(data)
-    if not ONLY_DRAW_PROJECTION_ON_COMPLETE:
-        sem4.set_array(data)
 
 def updateFrame2(*args):
-    if not ONLY_DRAW_PROJECTION_ON_COMPLETE:
-        sem4.set_array(data)
+    global sem4
+    sem4.set_array(data)
 
 def readSerial():
      global serialString
@@ -172,16 +174,36 @@ def readSerial():
      #print('\nb: '+serialString)
      parseString()
 
+
+def sLFC(xx,yy):
+    return (yy in range(0,6) and xx in range (50,58)) or \
+           (yy in range(3,5) and xx in range (40,68))
+
 def parseString():
     global serialString
-    global dataColIndex
-    global dataRowIndex
     global data
+    global mode
+    global dataColIndexes
     tokens = serialString.split(",")
     if len(tokens) > 1:
         antennaIndexes = []
         tokensFloats = []
         for t in tokens[:len(tokens)-1]:
+            if t == "turn":
+                print'TURN'
+                antennaIndexes.append(-2)
+                tokensFloats.append(-2)
+                continue
+            if t == "end":
+                print'END'
+                antennaIndexes.append(-3)
+                tokensFloats.append(-3)
+                continue
+            if t == "skip":
+                print'SKIP'
+                antennaIndexes.append(-4)
+                tokensFloats.append(-4)
+                continue
             fl = -1
             antennaIndex = -1
             try:
@@ -193,7 +215,7 @@ def parseString():
                 if OUTER_INPUT_RANGE[1] >= fl >= INPUT_RANGE[1]:
                     fl = INPUT_RANGE[1] -0.1
                 print fl
-                fl = float(m(fl))
+                fl = 1 - float(m(fl))
             except ValueError:
                 print(serialString)
                 print('parsing error caught\t' + str(t))
@@ -208,15 +230,45 @@ def parseString():
                 antennaIndexes.append(antennaIndex)
                 tokensFloats.append(fl)
         for a in range(0,len(tokensFloats)):
+            serialString = serialString[serialString.find(",") + 1:]
             token = tokensFloats[a]
             antennaIndex = antennaIndexes[a]
+            if token == -2:#TURN
+                print 'TURNED'
+                mode += 1
+                for u in range(0,len(dataColIndexes)):
+                    dataColIndexes[u] = 99
+                continue
+            if token == -3:#END
+                print 'ENDED'
+                mode -= 1
+                for u in range(0,len(dataColIndexes)):
+                    dataColIndexes[u] = 0
+                if baseline is not None:
+                    cmpDataToBaseline()
+                X, Y, Z = dataToXYZarrays()
+                global ax2
+                ax2.plot_trisurf(X, Y, Z, cmap="hot", shade="true")
+                continue
+            if token == -4:#SKIP
+                print 'SKIPPED'
+                continue
             if antennaIndex >= 0 and antennaIndex < HEIGHT:
-                if fl >= 0 and fl <= 1:
-                    data[antennaIndex][dataColIndexes[antennaIndex]] = token
-                dataColIndexes[antennaIndex] += 1
-                if dataColIndexes[antennaIndex] >= WIDTH:
-                    dataColIndexes[antennaIndex] = 0
-                serialString = serialString[serialString.find(",")+1:]
+                if token >= 0 and token <= 1 and dataColIndexes[antennaIndex]< \
+                        WIDTH and dataColIndexes[antennaIndex] >= 0:
+                    if sLFC(dataColIndexes,antennaIndex):
+                        token += 0.15
+                        if token > 1:
+                            token  = 0.99
+                    if mode == 0:
+                        data[antennaIndex][dataColIndexes[antennaIndex]] = token
+                        dataColIndexes[antennaIndex] += 1
+                    elif mode == 1:
+                        data[antennaIndex][dataColIndexes[antennaIndex]] = \
+                            (data[antennaIndex][dataColIndexes[antennaIndex]] +
+                             token) / 2.0
+                        dataColIndexes[antennaIndex] -= 1
+
 
 
 ani = animation.FuncAnimation(f, updateFrame, interval=REDRAW_INTERVAL)
