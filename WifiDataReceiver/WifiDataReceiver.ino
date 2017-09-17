@@ -7,7 +7,7 @@ void setup() {
 void loop() {
   // put your main code here, to run repeatedly:
   float y = random(-80, -20);
-  Serial.print("0:");
+  Serial.print("6:");
   Serial.print(y);
   Serial.print(",");
   delay(10);
@@ -23,6 +23,16 @@ void loop() {
   delay(10);
   y = random(-80, -20);
   Serial.print("3:");
+  Serial.print(y);
+  Serial.print(",");
+  delay(10);
+  y = random(-80, -20);
+  Serial.print("4:");
+  Serial.print(y);
+  Serial.print(",");
+  delay(10);
+  y = random(-80, -20);
+  Serial.print("5:");
   Serial.print(y);
   Serial.print(",");
   delay(10);
