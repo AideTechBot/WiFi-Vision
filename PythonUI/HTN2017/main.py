@@ -9,6 +9,8 @@ import re
 from mpl_toolkits.mplot3d import axes3d
 import matplotlib.pyplot as plt
 from scipy.interpolate import interp1d
+from random import randint
+from copy import copy, deepcopy
 
 from matplotlib.widgets import Button
 
@@ -24,10 +26,34 @@ class Callback(object):
         print 'base pressed'
         global baseline
         global data
-        baseline = data[:] #clones
+        baseline = deepcopy(data)
         cmpDataToBaseline()
 
-    
+    def turn(self, event):
+        global serialRW
+        serialRW.write("H".encode())
+        print 'turn pressed'
+
+        global mode
+        global dataColIndexes
+        mode = 1
+        for u in range(0, len(dataColIndexes)):
+            dataColIndexes[u] = 99
+
+    def end(self, event):
+        print 'finished pressed'
+        global mode
+        global dataColIndexes
+        mode = 0
+        for u in range(0, len(dataColIndexes)):
+            dataColIndexes[u] = 0
+        if baseline is not None:
+            cmpDataToBaseline()
+            X, Y, Z = dataToXYZarrays(baseline)
+        else:
+            X, Y, Z = dataToXYZarrays(data)
+        global ax2
+        ax2.plot_trisurf(X, Y, Z, cmap="hot", shade="true")
 
 
 #constants
@@ -38,7 +64,7 @@ OUTER_INPUT_RANGE = [10.0,80.0]
 INPUT_RANGE = [30.0,60.0]
 DEPTH_IN_Z = True #If false, depth in Y
 #ONLY_DRAW_3D_ON_COMPLETE = True
-#ONLY_DRAW_PROJECTION_ON_COMPLETE = False
+TURN_OFF_PROJECTION = True
 
 #global vars
 m = interp1d(INPUT_RANGE,[0,1])
@@ -77,7 +103,7 @@ mode = 0
 mlp.rcParams['toolbar'] = 'None'
 
 #for 3D map, turns 2D data array (x,y)->z into three 1D parallel arrays
-def dataToXYZarrays():
+def dataToXYZarrays(ddta):
     X = []
     Y = []
     Z = []
@@ -85,7 +111,7 @@ def dataToXYZarrays():
         for t in range(0, WIDTH):
             X.append(t)
             Y.append(i)
-            Z.append(data[i][t])
+            Z.append(ddta[i][t])
     if DEPTH_IN_Z:
         return X, Y, Z
     else:
@@ -95,8 +121,15 @@ def dataToXYZarrays():
 def cmpDataToBaseline():
     for i in range(0,HEIGHT):
         for t in range(0, WIDTH):
-            temp = (data[i][t] - baseline[i][t]) * 3
-            data[t][i] = sorted([temp,0,1])[1]
+            temp = (baseline[i][t] - data[i][t])
+            print(str(temp))
+            temp = temp * 3
+            if temp > 1:
+                data[i][t] = 1
+            elif temp < 0:
+                data[i][t] = 0
+            else:
+                data[i][t] = temp
 
 
 # create a shared window (figure) using subplots
@@ -110,17 +143,24 @@ ax3.set_title('Heat Map behind 4ft x 4ft Wall')
 
 callback = Callback()
 plt.subplots_adjust(bottom=0.2)
-axprev = plt.axes([0.7, 0.05, 0.1, 0.075])
-axnext = plt.axes([0.81, 0.05, 0.1, 0.075])
+axprev = plt.axes([0.85, 0.05, 0.1, 0.075])
+axturn = plt.axes([0.55, 0.05, 0.1, 0.075])
+axend = plt.axes([0.7, 0.05, 0.1, 0.075])
+axnext = plt.axes([0.4, 0.05, 0.1, 0.075])
 bnext = Button(axnext, 'Start Reading')
 bnext.on_clicked(callback.onStartPressed)
+bturn = Button(axturn, 'Turn')
+bturn.on_clicked(callback.turn)
+bend = Button(axend, 'Finish')
+bend.on_clicked(callback.end)
 bprev = Button(axprev, 'Use as baseline')
 bprev.on_clicked(callback.useAsBaseline)
 
 
 #create projection window
-f2 = plt.figure("Projected Readings")
-ax4 = plt.subplot(111)
+if not TURN_OFF_PROJECTION:
+    f2 = plt.figure("Projected Readings")
+    ax4 = plt.subplot(111)
 
 
 #set up axes on Heat Map
@@ -134,20 +174,22 @@ plt.yticks(y_axis_points, my_axis_labels)
 #turn off other axes
 ax1.set_axis_off()
 ax2.set_axis_off()
-ax4.set_axis_off()
+if not TURN_OFF_PROJECTION:
+    ax4.set_axis_off()
 
 #initial renders
 sem1 = ax1.imshow(data, interpolation='nearest', aspect=scaleReq,
                   extent=[0, WIDTH, 0, HEIGHT], cmap='bone')
 
-X,Y,Z = dataToXYZarrays()
+X,Y,Z = dataToXYZarrays(data)
 ax2.plot_trisurf(X,Y,Z, cmap="hot", shade="true")
 
 sem3 = ax3.imshow(data, aspect=scaleSq, interpolation='bilinear',
                   extent=[0, WIDTH, 0, HEIGHT], cmap='plasma')
 
-sem4 = ax4.imshow(data, interpolation='bilinear', aspect='auto',
-                  extent=[0, WIDTH, 0, HEIGHT], cmap='binary')
+if not TURN_OFF_PROJECTION:
+    sem4 = ax4.imshow(data, interpolation='bilinear', aspect='auto',
+                      extent=[0, WIDTH, 0, HEIGHT], cmap='binary')
 
 
 
@@ -175,9 +217,7 @@ def readSerial():
      parseString()
 
 
-def sLFC(xx,yy):
-    return (yy in range(0,6) and xx in range (50,58)) or \
-           (yy in range(3,5) and xx in range (40,68))
+
 
 def parseString():
     global serialString
@@ -189,21 +229,6 @@ def parseString():
         antennaIndexes = []
         tokensFloats = []
         for t in tokens[:len(tokens)-1]:
-            if t == "turn":
-                print'TURN'
-                antennaIndexes.append(-2)
-                tokensFloats.append(-2)
-                continue
-            if t == "end":
-                print'END'
-                antennaIndexes.append(-3)
-                tokensFloats.append(-3)
-                continue
-            if t == "skip":
-                print'SKIP'
-                antennaIndexes.append(-4)
-                tokensFloats.append(-4)
-                continue
             fl = -1
             antennaIndex = -1
             try:
@@ -233,33 +258,9 @@ def parseString():
             serialString = serialString[serialString.find(",") + 1:]
             token = tokensFloats[a]
             antennaIndex = antennaIndexes[a]
-            if token == -2:#TURN
-                print 'TURNED'
-                mode += 1
-                for u in range(0,len(dataColIndexes)):
-                    dataColIndexes[u] = 99
-                continue
-            if token == -3:#END
-                print 'ENDED'
-                mode -= 1
-                for u in range(0,len(dataColIndexes)):
-                    dataColIndexes[u] = 0
-                if baseline is not None:
-                    cmpDataToBaseline()
-                X, Y, Z = dataToXYZarrays()
-                global ax2
-                ax2.plot_trisurf(X, Y, Z, cmap="hot", shade="true")
-                continue
-            if token == -4:#SKIP
-                print 'SKIPPED'
-                continue
             if antennaIndex >= 0 and antennaIndex < HEIGHT:
                 if token >= 0 and token <= 1 and dataColIndexes[antennaIndex]< \
                         WIDTH and dataColIndexes[antennaIndex] >= 0:
-                    if sLFC(dataColIndexes,antennaIndex):
-                        token += 0.15
-                        if token > 1:
-                            token  = 0.99
                     if mode == 0:
                         data[antennaIndex][dataColIndexes[antennaIndex]] = token
                         dataColIndexes[antennaIndex] += 1
@@ -272,7 +273,8 @@ def parseString():
 
 
 ani = animation.FuncAnimation(f, updateFrame, interval=REDRAW_INTERVAL)
-ani2 = animation.FuncAnimation(f2, updateFrame2, interval=REDRAW_INTERVAL)
+if not TURN_OFF_PROJECTION:
+    ani2 = animation.FuncAnimation(f2, updateFrame2, interval=REDRAW_INTERVAL)
 
 #show windows
 plt.show()
